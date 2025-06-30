@@ -35,7 +35,7 @@ Refine is a web application that helps beginners learn effective prompting by pr
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/Karlmabs/refine.git
    cd refine-app
    ```
 
