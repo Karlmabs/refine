@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
+import { NextRequest, NextResponse } from "next/server";
+import Anthropic from "@anthropic-ai/sdk";
 
 const EVALUATION_PROMPT = `You are a prompt evaluation expert. Your job is to analyze user prompts and provide detailed feedback to help beginners improve their prompting skills.
 
@@ -32,7 +32,7 @@ Provide your response in this exact JSON format:
 Be specific and actionable in your feedback. Focus on helping beginners understand what makes a good prompt.`;
 
 // Initialize Anthropic client
-const anthropic = process.env.ANTHROPIC_API_KEY 
+const anthropic = process.env.ANTHROPIC_API_KEY
   ? new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY,
     })
@@ -44,14 +44,14 @@ export async function POST(request: NextRequest) {
 
     if (!prompt || prompt.trim().length === 0) {
       return NextResponse.json(
-        { error: 'Prompt is required' },
+        { error: "Prompt is required" },
         { status: 400 }
       );
     }
 
     // Check if Claude API is configured
     if (!anthropic) {
-      console.log('Claude API not configured, using mock data');
+      console.log("Claude API not configured, using mock data");
       // Return mock response when API key is not available
       const mockEvaluation = {
         overall_score: 35,
@@ -59,13 +59,13 @@ export async function POST(request: NextRequest) {
           clarity: 4,
           context: 2,
           format: 3,
-          completeness: 4
+          completeness: 4,
         },
         what_is_missing: [
           "Specific details about your preferences and requirements",
           "Clear context about the purpose or goal",
           "Desired format for the response",
-          "Timeline or constraints that should be considered"
+          "Timeline or constraints that should be considered",
         ],
         improved_prompt: `I'm planning a 7-day trip to Europe in September 2024 for my first time visiting. I'm interested in history, art, and local cuisine, with a budget of $3000 excluding flights. I prefer a mix of major cities and smaller towns, and I'd like to visit 2-3 countries maximum to avoid rushing.
 
@@ -82,79 +82,114 @@ Please format your response with clear headings for each section.`,
           "Included personal interests (history, art, cuisine) to enable personalized recommendations",
           "Specified travel style preferences (mix of cities and towns, 2-3 countries max)",
           "Requested specific deliverables with numbered list for clarity",
-          "Added desired response format with clear headings for better organization"
-        ]
+          "Added desired response format with clear headings for better organization",
+        ],
       };
 
       // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 2000));
       return NextResponse.json(mockEvaluation);
     }
 
     // Call Claude API
     const message = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+      model: "claude-3-5-sonnet-20241022",
       max_tokens: 2000,
       temperature: 0.3,
       messages: [
         {
-          role: 'user',
-          content: `${EVALUATION_PROMPT}\n\nPrompt to evaluate: "${prompt}"`
-        }
-      ]
+          role: "user",
+          content: `${EVALUATION_PROMPT}\n\nPrompt to evaluate: "${prompt}"`,
+        },
+      ],
     });
 
     // Parse the response
-    const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
-    
+    const responseText =
+      message.content[0].type === "text" ? message.content[0].text : "";
+
     try {
-      // Extract JSON from the response
+      // Extract JSON from the response using a more robust approach
+      let jsonString = "";
+
+      // Try to find JSON block between curly braces
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        throw new Error('No valid JSON found in response');
+        throw new Error("No valid JSON found in response");
       }
-      
-      const evaluation = JSON.parse(jsonMatch[0]);
-      
+
+      jsonString = jsonMatch[0];
+
+      // Try parsing directly first
+      let evaluation;
+      try {
+        evaluation = JSON.parse(jsonString);
+      } catch (parseError) {
+        // If direct parsing fails, try to fix common issues
+        console.log(
+          "Direct JSON parse failed, attempting to clean:",
+          parseError
+        );
+
+        // Replace problematic characters in string values only
+        const cleanedJson = jsonString.replace(
+          /"([^"\\]*(\\.[^"\\]*)*)"/g,
+          (_, content) => {
+            // Only clean the content inside quotes
+            const cleaned = content
+              .replace(/\n/g, "\\n")
+              .replace(/\r/g, "\\r")
+              .replace(/\t/g, "\\t")
+              .replace(/[\u0000-\u001F\u007F-\u009F]/g, "");
+            return `"${cleaned}"`;
+          }
+        );
+
+        evaluation = JSON.parse(cleanedJson);
+      }
+
       // Validate the response structure
-      if (!evaluation.overall_score || !evaluation.scores || !evaluation.what_is_missing || 
-          !evaluation.improved_prompt || !evaluation.key_changes) {
-        throw new Error('Invalid response structure');
+      if (
+        !evaluation.overall_score ||
+        !evaluation.scores ||
+        !evaluation.what_is_missing ||
+        !evaluation.improved_prompt ||
+        !evaluation.key_changes
+      ) {
+        throw new Error("Invalid response structure");
       }
 
       return NextResponse.json(evaluation);
-      
     } catch (parseError) {
-      console.error('Failed to parse Claude response:', parseError);
-      console.error('Raw response:', responseText);
-      
+      console.error("Failed to parse Claude response:", parseError);
+      console.error("Raw response:", responseText);
+
       return NextResponse.json(
-        { error: 'Failed to parse evaluation response' },
+        { error: "Failed to parse evaluation response" },
         { status: 500 }
       );
     }
-
   } catch (error) {
-    console.error('Evaluation error:', error);
-    
+    console.error("Evaluation error:", error);
+
     // Handle rate limiting
-    if (error instanceof Error && error.message.includes('rate_limit')) {
+    if (error instanceof Error && error.message.includes("rate_limit")) {
       return NextResponse.json(
-        { error: 'Too many requests. Please try again in a moment.' },
+        { error: "Too many requests. Please try again in a moment." },
         { status: 429 }
       );
     }
-    
+
     // Handle API errors
-    if (error instanceof Error && error.message.includes('api_key')) {
+    if (error instanceof Error && error.message.includes("api_key")) {
       return NextResponse.json(
-        { error: 'API configuration error. Please check your setup.' },
+        { error: "API configuration error. Please check your setup." },
         { status: 503 }
       );
     }
 
     return NextResponse.json(
-      { error: 'Failed to evaluate prompt. Please try again.' },
+      { error: "Failed to evaluate prompt. Please try again." },
       { status: 500 }
     );
   }
